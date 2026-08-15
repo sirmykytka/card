@@ -1,5 +1,16 @@
 import struct
+from dataclasses import dataclass
 from pathlib import Path
+
+
+@dataclass
+class CardManifest:
+    """
+    A data class that represents the card manifest, i.e. what was put into it.
+    """
+    version: int
+    extension: str
+    metadata: str
 
 
 class Card:
@@ -80,55 +91,62 @@ class Card:
                 b'X' * Card.RESERVED_BYTES
             )
 
-            # Data
+            # Metadata with the file itself
             card_bytes += extension.encode('ascii')
             card_bytes += metadata.encode('ascii')
 
-            # Files bytes
             card_bytes += file_bytes
 
         with open(card_file, 'wb') as f:
             f.write(card_bytes)
 
     @staticmethod
-    def unpack(file_path: str) -> None:
-        file = Path(file_path)
-        parent = file.parent
-        name = file.stem
-        extension = file.suffix
+    def unpack(card_path: str | Path) -> CardManifest:
+        """
+        A method that unpacks a binary container as a file and a card manifest.
+        :param card_path: path to file
+        :return:
+        """
 
-        if extension != ".card":
-            raise Exception('This file is not a Card!')
+        path = Path(card_path) if isinstance(card_path, str) else card_path
 
-        with open(file_path, 'rb+') as p:
+        if not path.exists():
+            raise FileNotFoundError(f'File {path} does not exist')
+
+        if not path.is_file():
+            raise Exception(f"{path} is not a file")
+
+        parent = path.parent
+        name = path.stem
+        extension = path.suffix
+
+        if extension != Card.EXTENSION:
+            raise Exception('This file is not a card!')
+
+        with open(path, 'rb') as p:
             card_bytes = p.read()
 
             header_bytes = card_bytes[0:Card.HEADER_BYTES - 1]
-            header = ' '.join(f'{b:02X}' for b in header_bytes)
-            print(header)
+            # header = ' '.join(f'{b:02X}' for b in header_bytes)
 
             pointer = 0
 
-            # Extension signature
+            # Signature
             signature = header_bytes[pointer:Card.SIGNATURE_BYTES]
-            if signature != b'CARD':
-                raise Exception('This file was not Card-ed!')
-
-            print('Signature:', signature)
+            if signature != Card.SIGNATURE:
+                raise Exception('This file was not packed into card!')
 
             pointer += Card.SIGNATURE_BYTES
 
             # Version
             version_bytes = header_bytes[pointer:pointer+Card.VERSION_BYTES]
             version = struct.unpack('>B', version_bytes)[0]
-            print('Version of Card-ed:', version)
 
             pointer += Card.VERSION_BYTES
 
             # Additional length of initial extension
             ext_len_bytes = header_bytes[pointer:pointer+Card.EXTENSION_BYTES]
             ext_len = struct.unpack('>B', ext_len_bytes)[0]
-            print('Length of extension:', ext_len)
 
             pointer += Card.EXTENSION_BYTES
 
@@ -137,7 +155,6 @@ class Card:
                 pointer:pointer+Card.METADATA_BYTES
             ]
             metadata_len = struct.unpack('>I', metadata_len_bytes)[0]
-            print('Length of metadata:', metadata_len)
 
             pointer += Card.METADATA_BYTES
 
@@ -146,23 +163,22 @@ class Card:
 
             data_bytes = card_bytes[0:pointer+ext_len+metadata_len]
 
-            print(pointer)
-            print(data_bytes)
-
             # Initial extension
             init_ext_bytes = data_bytes[pointer:pointer+ext_len]
             init_ext_len = init_ext_bytes.decode('ascii')
-            print('Original file extension:', init_ext_len)
 
             pointer += ext_len
 
             metadata_bytes = data_bytes[pointer:pointer+metadata_len]
             metadata = metadata_bytes.decode('ascii')
-            print('Metadata:', metadata)
 
             pointer += metadata_len
 
             file_bytes = card_bytes[pointer:]
 
-        with open(parent / (name + init_ext_len), 'wb') as f:
+        file_path = parent / (name + init_ext_len)
+
+        with open(file_path, 'wb') as f:
             f.write(file_bytes)
+
+        return CardManifest(version, extension, metadata)
