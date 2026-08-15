@@ -24,6 +24,7 @@ class Card:
       [...]    Image data  Original image bytes (remaining content)
     """
 
+    EXTENSION = ".card"
     SIGNATURE = b"CARD"
     VERSION = 1
 
@@ -35,22 +36,37 @@ class Card:
     HEADER_BYTES = 16
 
     @staticmethod
-    def pack(file_path: str) -> None:
-        file = Path(file_path)
-        parent = file.parent
-        name = file.stem
-        extension = file.suffix
+    def pack(file_path: str | Path, metadata: str) -> None:
+        """
+        A method that creates binary container with a file and metadata.
+        :param file_path: path to file
+        :param metadata: metadata that will be added to the file
+        :return:
+        """
 
-        if extension == ".card":
-            raise Exception('This file is already a Card!')
+        path = Path(file_path) if isinstance(file_path, str) else file_path
 
-        with open(file_path, 'rb+') as f:
+        if not path.exists():
+            raise FileNotFoundError(f'File {path} does not exist')
+
+        if not path.is_file():
+            raise Exception(f"{path} is not a file")
+
+        parent = path.parent
+        name = path.stem
+        extension = path.suffix
+        card_file = parent / (name + '.card')
+
+        if extension == Card.EXTENSION:
+            raise Exception('This file is already the card')
+
+        with open(path, 'rb') as f:
             file_bytes = f.read()
 
             # Check the signature
-            signature = file_bytes[0:4]
-            if signature == b'CARD':
-                raise Exception('This file was already Card-ed!')
+            signature = file_bytes[0:Card.SIGNATURE_BYTES]
+            if signature == Card.SIGNATURE:
+                raise Exception('This file was already turn into the card')
 
             card_bytes = bytes()
 
@@ -58,7 +74,7 @@ class Card:
             card_bytes += struct.pack('@4s', Card.SIGNATURE)
             card_bytes += struct.pack('>B', Card.VERSION)
             card_bytes += struct.pack('>B', len(extension))
-            card_bytes += struct.pack('>I', len(name))
+            card_bytes += struct.pack('>I', len(metadata))
             card_bytes += struct.pack(
                 f'@{Card.RESERVED_BYTES}s',
                 b'X' * Card.RESERVED_BYTES
@@ -66,12 +82,12 @@ class Card:
 
             # Data
             card_bytes += extension.encode('ascii')
-            card_bytes += name.encode('ascii')
+            card_bytes += metadata.encode('ascii')
 
             # Files bytes
             card_bytes += file_bytes
 
-        with open(parent / (name + '.card'), 'wb') as f:
+        with open(card_file, 'wb') as f:
             f.write(card_bytes)
 
     @staticmethod
