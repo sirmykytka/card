@@ -3,6 +3,37 @@ from pathlib import Path
 
 
 class Card:
+    """
+    A custom binary container for images with metadata.
+
+    The .card file bundles an image with its original extension and metadata
+    (tags, source, description, etc.) into a single self-contained file.
+
+    Structure (all integers are big-endian):
+
+    Header (16 bytes):
+      [0..3]   Signature   "CARD"
+      [4]      Version     1 (for future extensions)
+      [5]      Ext len     Length of original extension (e.g., 4 for ".png")
+      [6..9]   Meta len    Length of metadata (e.g., 12 for "Hello world!")
+      [10..15]  Reserved    Zero-filled (for future use)
+
+    After header (variable):
+      [16..]   Extension   Original extension (e.g., ".png")
+      [...]    Metadata    Custom metadata (e.g., JSON or plain text)
+      [...]    Image data  Original image bytes (remaining content)
+    """
+
+    SIGNATURE = b"CARD"
+    VERSION = 1
+
+    SIGNATURE_BYTES = 4
+    VERSION_BYTES = 1
+    EXTENSION_BYTES = 1
+    METADATA_BYTES = 4
+    RESERVED_BYTES = 6
+    HEADER_BYTES = 16
+
     @staticmethod
     def pack(file_path: str) -> None:
         file = Path(file_path)
@@ -16,26 +47,27 @@ class Card:
         with open(file_path, 'rb+') as f:
             file_bytes = f.read()
 
-            # Extension signature
+            # Check the signature
             signature = file_bytes[0:4]
             if signature == b'CARD':
                 raise Exception('This file was already Card-ed!')
 
             card_bytes = bytes()
 
-            # Extension signature
-            card_bytes += struct.pack('@4s', b'CARD')
-            # Version
-            card_bytes += struct.pack('>B', 0)
-            # Additional length of initial extension
+            # Struct of header
+            card_bytes += struct.pack('@4s', Card.SIGNATURE)
+            card_bytes += struct.pack('>B', Card.VERSION)
             card_bytes += struct.pack('>B', len(extension))
-            # Initial extension
-            card_bytes += extension.encode('ascii')
-            # Length of metadata
             card_bytes += struct.pack('>I', len(name))
-            # Metadata
+            card_bytes += struct.pack(
+                f'@{Card.RESERVED_BYTES}s',
+                b'X' * Card.RESERVED_BYTES
+            )
+
+            # Data
+            card_bytes += extension.encode('ascii')
             card_bytes += name.encode('ascii')
-            print(card_bytes)
+
             # Files bytes
             card_bytes += file_bytes
 
@@ -55,52 +87,66 @@ class Card:
         with open(file_path, 'rb+') as p:
             card_bytes = p.read()
 
-            print(' '.join(f'{b:02X}' for b in card_bytes[0:25]))
+            header_bytes = card_bytes[0:Card.HEADER_BYTES - 1]
+            header = ' '.join(f'{b:02X}' for b in header_bytes)
+            print(header)
+
+            pointer = 0
 
             # Extension signature
-            signature = card_bytes[0:4]
+            signature = header_bytes[pointer:Card.SIGNATURE_BYTES]
             if signature != b'CARD':
                 raise Exception('This file was not Card-ed!')
 
+            print('Signature:', signature)
+
+            pointer += Card.SIGNATURE_BYTES
+
             # Version
-            version_bytes = card_bytes[4:5]
+            version_bytes = header_bytes[pointer:pointer+Card.VERSION_BYTES]
             version = struct.unpack('>B', version_bytes)[0]
             print('Version of Card-ed:', version)
 
-            # Additional length of initial extension
-            INIT_FORMAT_END = 5
-            INIT_EXT_START = INIT_FORMAT_END + 1
+            pointer += Card.VERSION_BYTES
 
-            ext_len_bytes = card_bytes[INIT_FORMAT_END:INIT_EXT_START]
+            # Additional length of initial extension
+            ext_len_bytes = header_bytes[pointer:pointer+Card.EXTENSION_BYTES]
             ext_len = struct.unpack('>B', ext_len_bytes)[0]
+            print('Length of extension:', ext_len)
+
+            pointer += Card.EXTENSION_BYTES
+
+            # Length of metadata
+            metadata_len_bytes = header_bytes[
+                pointer:pointer+Card.METADATA_BYTES
+            ]
+            metadata_len = struct.unpack('>I', metadata_len_bytes)[0]
+            print('Length of metadata:', metadata_len)
+
+            pointer += Card.METADATA_BYTES
+
+            # RESERVED
+            pointer += Card.RESERVED_BYTES
+
+            data_bytes = card_bytes[0:pointer+ext_len+metadata_len]
+
+            print(pointer)
+            print(data_bytes)
 
             # Initial extension
-            INIT_EXT_END = INIT_EXT_START + ext_len
-
-            init_ext_bytes = card_bytes[INIT_EXT_START:INIT_EXT_END]
+            init_ext_bytes = data_bytes[pointer:pointer+ext_len]
             init_ext_len = init_ext_bytes.decode('ascii')
             print('Original file extension:', init_ext_len)
 
-            # Length of metadata
-            LEN_OF_METADATA = 4
+            pointer += ext_len
 
-            metadata_len_bytes = card_bytes[
-                INIT_EXT_END:INIT_EXT_END+LEN_OF_METADATA
-            ]
-            metadata_len = struct.unpack('>I', metadata_len_bytes)[0]
-
-            # Metadata
-            METADATA_START = INIT_EXT_END+LEN_OF_METADATA
-
-            metadata_bytes = card_bytes[
-                METADATA_START:METADATA_START+metadata_len
-            ]
+            metadata_bytes = data_bytes[pointer:pointer+metadata_len]
             metadata = metadata_bytes.decode('ascii')
             print('Metadata:', metadata)
 
-            # Files bytes
-            FILE_BYTES_START = METADATA_START+metadata_len
-            file_bytes = card_bytes[FILE_BYTES_START:]
+            pointer += metadata_len
+
+            file_bytes = card_bytes[pointer:]
 
         with open(parent / (name + init_ext_len), 'wb') as f:
             f.write(file_bytes)
