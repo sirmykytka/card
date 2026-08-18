@@ -55,15 +55,23 @@ class Card:
     HEADER_BYTES = 16
 
     @staticmethod
-    def pack(file_path: str | Path, metadata: str, hash_type: int = 1) -> None:
+    def pack(
+        file_path: str | Path,
+        metadata: str,
+        output_path: str | None = None
+    ) -> None:
         """
         A method that creates binary container with a file and metadata.
-        :param file_path: path to file
+        :param file_path: path to input file
         :param metadata: metadata that will be added to the file
+        :param output_path: path to output file
         :return:
         """
 
         path = Path(file_path) if isinstance(file_path, str) else file_path
+        output = (
+            Path(output_path) if isinstance(output_path, str) else output_path
+        )
 
         if not path.exists():
             raise FileNotFoundError(f'File {path} does not exist')
@@ -74,7 +82,7 @@ class Card:
         parent = path.parent
         name = path.stem
         extension = path.suffix
-        card_file = parent / (name + '.card')
+        card_file = parent / (name + '.card') if output is None else output
 
         if extension == Card.EXTENSION:
             raise Exception('This file is already the card')
@@ -112,7 +120,7 @@ class Card:
             f.write(card_bytes)
 
     @staticmethod
-    def unpack(card_path: str | Path) -> CardManifest:
+    def unpack(card_path: str | Path, output_path: str | None) -> CardManifest:
         """
         A method that unpacks a binary container as a file and a card manifest.
         :param card_path: path to file
@@ -120,6 +128,9 @@ class Card:
         """
 
         path = Path(card_path) if isinstance(card_path, str) else card_path
+        output = (
+            Path(output_path) if isinstance(output_path, str) else output_path
+        )
 
         if not path.exists():
             raise FileNotFoundError(f'File {path} does not exist')
@@ -130,9 +141,6 @@ class Card:
         parent = path.parent
         name = path.stem
         extension = path.suffix
-
-        if extension != Card.EXTENSION:
-            raise Exception('This file is not a card!')
 
         with open(path, 'rb') as p:
             card_bytes = p.read()
@@ -198,7 +206,7 @@ class Card:
             if manifest_hash_bytes != file_hash_bytes:
                 raise Exception('File into card container corrupted')
 
-        file_path = parent / (name + init_ext_len)
+        file_path = parent / (name + init_ext_len) if output is None else output
 
         with open(file_path, 'wb') as f:
             f.write(file_bytes)

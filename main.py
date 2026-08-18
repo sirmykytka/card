@@ -14,18 +14,20 @@ def main():
     pack_parser = subparsers.add_parser('pack')
     pack_parser.add_argument('file_path')
     pack_parser.add_argument('metadata')
+    pack_parser.add_argument('-o', '--output')
 
     unpack_parser = subparsers.add_parser('unpack')
     unpack_parser.add_argument('card_path')
     unpack_parser.add_argument('-m', '--manifest', action='store_true')
+    unpack_parser.add_argument('-o', '--output')
 
     args = parser.parse_args()
 
     try:
         if args.method == 'pack':
-            Card.pack(args.file_path, args.metadata)
+            Card.pack(args.file_path, args.metadata, args.output)
         elif args.method == 'unpack':
-            manifest = Card.unpack(args.card_path)
+            manifest = Card.unpack(args.card_path, args.output)
             if args.manifest:
                 print(f"Version:".ljust(10), manifest.version)
                 print(f"Hash:".ljust(10), manifest.hash)
